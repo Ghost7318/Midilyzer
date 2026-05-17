@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Player Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Sans-Serif; 
+            text-align: center; 
+            margin: 0; 
+            padding: 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%); 
+            color: #4a5568;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 450px;
+            margin: 40px auto;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(160, 175, 192, 0.25);
+            box-sizing: border-box;
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #2d3748;
+            margin-bottom: 25px;
+            font-weight: 600;
+        }
+
+        button, .file-label {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            margin: 12px 0;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 14px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+
+        #init-btn { background: #8fa883; color: white; }
+        .file-label { background: #e2e8f0; color: #4a5568; text-align: center; }
+        #file-input { display: none; }
+
+        /* 再生コントロール系 */
+        .btn-group { display: flex; gap: 10px; }
+        .btn-group button { flex: 1; margin: 5px 0; }
+        #play-btn { background: #6b8e23; color: white; }
+        #play-btn:disabled { background: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
+        #pause-btn { background: #e5c1a9; color: #7a542e; }
+        #reset-btn { background: #cbd5e1; color: #4a5568; }
+
+        /* 💡 新設：シークバー（スライダー）のスタイル */
+        .seekbar-container {
+            margin: 20px 0 10px 0;
+            padding: 0 5px;
+        }
+        #seek-bar {
+            width: 100%;
+            -webkit-appearance: none;
+            background: #e2e8f0;
+            height: 6px;
+            border-radius: 3px;
+            outline: none;
+        }
+        #seek-bar::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #6b8e23;
+            cursor: pointer;
+        }
+        .time-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 5px;
+        }
+
+        .info-list {
+            background: #f8fafc;
+            border-radius: 16px;
+            padding: 8px 16px;
+            margin: 20px 0;
+            border: 1px solid #edf2f7;
+            text-align: left;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #edf2f7;
+        }
+        .info-item:last-child { border-bottom: none; }
+        .info-label { font-size: 15px; color: #718096; }
+        .info-value { font-size: 16px; font-weight: 600; color: #2d3748; }
+        .chord-value { color: #b25d5d; font-size: 18px; }
+        .note { font-size: 11px; color: #a0aec0; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>MIDI Analyzer</h1>
+    
+    <button id="init-btn">🔊 まず音を有効化する</button>
+    
+    <div id="player-section" style="display:none;">
+        <label class="file-label" for="file-input">🎵 MIDIファイルを読み込む</label>
+        <input type="file" id="file-input" accept=".mid,.midi">
+        
+        <!-- 💡 追加：シークバーと時間表示 -->
+        <div class="seekbar-container">
+            <input type="range" id="seek-bar" value="0" min="0" max="100" step="0.1" disabled>
+            <div class="time-display">
+                <span id="current-time">0:00</span>
+                <span id="total-time">0:00</span>
+            </div>
+        </div>
+
+        <!-- コントロールボタン群 -->
+        <div class="btn-group">
+            <button id="play-btn" disabled>▶ 再生</button>
+            <button id="pause-btn" style="display:none;">⏸ 一時停止</button>
+            <button id="reset-btn" disabled>⏮ 最初から</button>
+        </div>
+
+        <div class="info-list">
+            <div class="info-item">
+                <span class="info-label">ノート数 (音数)</span>
+                <span class="info-value" id="info-notes">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">テンポ</span>
+                <span class="info-value" id="info-bpm">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">基本キー (調)</span>
+                <span class="info-value" id="info-key">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">現在のコード</span>
+                <span class="info-value chord-value" id="info-chord">-</span>
+            </div>
+        </div>
+        
+        <p class="note">※バーを動かして好きなところから再生できます</p>
+    </div>
+</div>
+
+<script>
+    let midiData = null;
+    let synths = [];
+    let scheduleIds = [];
+    let activeNotes = new Set();
+    let isUserSeeking = false; // ユーザーがバーを触っているかどうかのフラグ
+    let updateTimer = null;    // 画面更新用のタイマー
+    
+    const seekBar = document.getElementById('seek-bar');
+    const currentTimeText = document.getElementById('current-time');
+    const totalTimeText = document.getElementById('total-time');
+
+    // オーディオの有効化
+    document.getElementById('init-btn').addEventListener('click', async () => {
+        await Tone.start();
+        document.getElementById('init-btn').style.display = 'none';
+        document.getElementById('player-section').style.display = 'block';
+    });
+
+    // ファイル読み込み
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        document.querySelector('.file-label').textContent = `選択中: ${file.name}`;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            // 前の曲のスケジュールを綺麗に消す
+            resetPlayback();
+            
+            midiData = new Midi(event.target.result);
+            displayMidiInfo(midiData);
+            
+            // シークバーの初期化
+            seekBar.max = midiData.duration;
+            seekBar.value = 0;
+            seekBar.disabled = false;
+            totalTimeText.textContent = formatTime(midiData.duration);
+            currentTimeText.textContent = "0:00";
+            
+            // スケジュール（楽譜の登録）をあらかじめ行う
+            setupSchedule(midiData);
+            
+            document.getElementById('play-btn').disabled = false;
+            document.getElementById('reset-btn').disabled = false;
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    // 秒を「分:秒」に変換する関数
+    function formatTime(seconds) {
+        const s = Math.round(seconds);
+        const mins = Math.floor(s / 60);
+        const secs = s % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function displayMidiInfo(midi) {
+        let totalNotes = 0;
+        midi.tracks.forEach(track => totalNotes += track.notes.length);
+        document.getElementById('info-notes').textContent = totalNotes + " 音";
+
+        const bpm = midi.header.tempos.length > 0 ? Math.round(midi.header.tempos[0].bpm) : 120;
+        document.getElementById('info-bpm').textContent = bpm + " BPM";
+
+        const keyInfo = midi.header.keySignatures.length > 0 
+            ? `${midi.header.keySignatures[0].key} ${midi.header.keySignatures[0].scale}` 
+            : "判定不可 / 未設定";
+        document.getElementById('info-key').textContent = keyInfo;
+        document.getElementById('info-chord').textContent = "-";
+    }
+
+    // 💡 あらかじめMIDIデータをタイムラインに登録しておく関数
+    function setupSchedule(midi) {
+        // 古いシンセを破棄
+        synths.forEach(s => s.dispose());
+        synths = [];
+        
+        midi.tracks.forEach((track) => {
+            const synth = new Tone.PolySynth(Tone.FMSynth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.02, decay: 0.1, sustain: 0.5, release: 0.8 }
+            }).toDestination();
+            synth.volume.value = -18;
+            synths.push(synth);
+            
+            track.notes.forEach(note => {
+                // 音が鳴る瞬間
+                const startId = Tone.Transport.schedule(() => {
+                    synth.triggerAttack(note.name);
+                    activeNotes.add(note.name);
+                    updateChordDisplay();
+                }, note.time);
+                scheduleIds.push(startId);
+
+                // 音が止まる瞬間
+                const endId = Tone.Transport.schedule(() => {
+                    synth.triggerRelease(note.name);
+                    activeNotes.delete(note.name);
+                    updateChordDisplay();
+                }, note.time + note.duration);
+                scheduleIds.push(endId);
+            });
+        });
+        
+        // 曲が終わったら自動で止まる処理
+        const stopId = Tone.Transport.schedule(() => {
+            pausePlayback();
+            resetPlayback();
+        }, midi.duration);
+        scheduleIds.push(stopId);
+    }
+
+    // 💡 再生中にバーと時間を進めるタイマー
+    function startUpdateLoop() {
+        updateTimer = setInterval(() => {
+            if (!isUserSeeking && midiData) {
+                const currentTime = Tone.Transport.seconds;
+                seekBar.value = currentTime;
+                currentTimeText.textContent = formatTime(currentTime);
+            }
+        }, 100); // 0.1秒ごとに更新
+    }
+
+    function stopUpdateLoop() {
+        clearInterval(updateTimer);
+    }
+
+    // --- ボタンのイベント処理 ---
+
+    // 再生
+    document.getElementById('play-btn').addEventListener('click', () => {
+        if (!midiData) return;
+        document.getElementById('play-btn').style.display = 'none';
+        document.getElementById('pause-btn').style.display = 'block';
+        
+        // 前回の停止位置（またはシーク位置）から再生
+        Tone.Transport.start();
+        startUpdateLoop();
+    });
+
+    // 💡 一時停止（ポーズ）
+    document.getElementById('pause-btn').addEventListener('click', pausePlayback);
+
+    function pausePlayback() {
+        document.getElementById('play-btn').style.display = 'block';
+        document.getElementById('pause-btn').style.display = 'none';
+        
+        Tone.Transport.pause(); // 時間をその場で止める
+        stopUpdateLoop();
+        
+        // 音が鳴りっぱなしになるのを防ぐため、全シンセの音を強制解放
+        synths.forEach(synth => synth.releaseAll());
+        activeNotes.clear();
+        updateChordDisplay();
+    }
+
+    // 💡 最初からリセット
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        const wasPlaying = Tone.Transport.state === "started";
+        if (wasPlaying) {
+            pausePlayback();
+        }
+        resetPlayback();
+        if (wasPlaying) {
+            document.getElementById('play-btn').click(); // 再生中だったならすぐ再開
+        }
+    });
+
+    function resetPlayback() {
+        Tone.Transport.seconds = 0; // 時間を0に戻す
+        seekBar.value = 0;
+        currentTimeText.textContent = "0:00";
+        activeNotes.clear();
+        updateChordDisplay();
+    }
+
+    // --- 💡 シークバー（スライダー）の操作連動 ---
+
+    // ユーザーが指でバーを触り始めたとき
+    seekBar.addEventListener('input', () => {
+        isUserSeeking = true;
+        currentTimeText.textContent = formatTime(seekBar.value);
+    });
+
+    // ユーザーが指を離したとき（位置の確定）
+    seekBar.addEventListener('change', () => {
+        if (!midiData) return;
+        
+        const targetTime = parseFloat(seekBar.value);
+        
+        // 瞬間的に音を止めつつ、再生位置を移動
+        synths.forEach(synth => synth.releaseAll());
+        activeNotes.clear();
+        
+        Tone.Transport.seconds = targetTime; // 再生位置を変更！
+        
+        isUserSeeking = false;
+        updateChordDisplay();
+    });
+
+
+    // 簡易コード判定（ロジックはそのまま）
+    function detectChord(noteNamesArray) {
+        if (noteNamesArray.length < 3) return "-";
+        const uniqueNotes = Array.from(new Set(noteNamesArray.map(n => n.replace(/[0-9]/g, ''))));
+        const scale = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        for (let root of uniqueNotes) {
+            let rootIdx = scale.indexOf(root);
+            if (rootIdx === -1) continue;
+            let intervals = uniqueNotes.map(n => {
+                let idx = scale.indexOf(n);
+                return (idx - rootIdx + 12) % 12;
+            }).sort((a, b) => a - b);
+            const has = (num) => intervals.includes(num);
+            if (has(4) && has(7)) {
+                if (has(10)) return root + "7";
+                if (has(11)) return root + "M7";
+                return root;
+            }
+            if (has(3) && has(7)) {
+                if (has(10)) return root + "m7";
+                return root + "m";
+            }
+            if (has(4) && has(8)) return root + "aug";
+            if (has(3) && has(6)) return root + "dim";
+            if (has(5) && has(7)) return root + "sus4";
+        }
+        return uniqueNotes.join(' + ');
+    }
+
+    function updateChordDisplay() {
+        const chordName = detectChord(Array.from(activeNotes));
+        document.getElementById('info-chord').textContent = chordName;
+    }
+</script>
+
+</body>
+</html>
